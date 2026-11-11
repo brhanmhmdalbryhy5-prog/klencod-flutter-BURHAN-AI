@@ -1,0 +1,29 @@
+name: burhan_ai
+description: A local offline AI assistant built with Flutter.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.2.2
+  
+  # قاعدة البيانات المحلية
+  sqflite: ^2.3.0
+  path: ^1.8.3
+
+  # لقراءة ملفات PDF
+  syncfusion_flutter_pdf: ^21.2.10
+  file_picker: ^6.1.1
+
+  # لمعالجة النصوص والبحث الدلالي
+  http: ^1.1.0
+  
+  # أيقونات إضافية
+  cupertino_icons: ^1.0.6
+
+flutter:
+  uses-material-design: true

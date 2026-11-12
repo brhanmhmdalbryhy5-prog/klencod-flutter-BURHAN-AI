@@ -2,13 +2,18 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'core/db_helper.dart'; // استدعاء ملف قاعدة البيانات
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // تهيئة قاعدة البيانات عند بدء التطبيق
+  await DatabaseHelper.instance.database; 
+  
   runApp(const BurhanAIApp());
 }
 
-// --- الألوان المتدرجة ---
+// --- 1. الألوان والثيم ---
 class AppTheme {
   static const Color background = Color(0xFF0F172A);
   static const Color surface = Color(0xFF1E293B);
@@ -39,6 +44,7 @@ class AppTheme {
       );
 }
 
+// --- 2. التطبيق الرئيسي ---
 class BurhanAIApp extends StatelessWidget {
   const BurhanAIApp({super.key});
 
@@ -53,7 +59,6 @@ class BurhanAIApp extends StatelessWidget {
   }
 }
 
-// --- الشاشة الرئيسية ---
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -107,7 +112,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// --- 1. شاشة الدردشة ---
+// --- 3. شاشة الدردشة ---
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -127,9 +132,11 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.add({'role': 'user', 'text': _controller.text});
       _controller.clear();
       Future.delayed(const Duration(seconds: 1), () {
-        setState(() {
-          _messages.add({'role': 'assistant', 'text': 'هذا رد تجريبي. لقد استلمت رسالتك وسأجيبك من الملفات قريباً.'});
-        });
+        if (mounted) {
+          setState(() {
+            _messages.add({'role': 'assistant', 'text': 'هذا رد تجريبي. لقد استلمت رسالتك وسأجيبك من الملفات قريباً.'});
+          });
+        }
       });
     });
   }
@@ -205,7 +212,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// --- 2. شاشة الملفات (تم تفعيل زر الرفع) ---
+// --- 4. شاشة الملفات (قاعدة البيانات) ---
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
 
@@ -215,17 +222,27 @@ class FilesScreen extends StatefulWidget {
 
 class _FilesScreenState extends State<FilesScreen> {
   bool _isLoading = false;
-  String _extractedText = '';
+  List<Map<String, dynamic>> _savedFiles = [];
 
-  // دالة اختيار الملف وقراءته
-  Future<void> _pickAndReadFile() async {
-    setState(() {
-      _isLoading = true;
-      _extractedText = '';
-    });
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedFiles(); 
+  }
+
+  Future<void> _loadSavedFiles() async {
+    final files = await DatabaseHelper.instance.getAllFiles();
+    if (mounted) {
+      setState(() {
+        _savedFiles = files;
+      });
+    }
+  }
+
+  Future<void> _pickAndSaveFile() async {
+    setState(() => _isLoading = true);
 
     try {
-      // 1. فتح مدير الملفات لاختيار PDF فقط
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf'],
@@ -233,44 +250,49 @@ class _FilesScreenState extends State<FilesScreen> {
 
       if (result != null && result.files.single.path != null) {
         File file = File(result.files.single.path!);
+        String fileName = result.files.single.name;
         
-        // 2. قراءة ملف الـ PDF
         final bytes = await file.readAsBytes();
         final PdfDocument document = PdfDocument(inputBytes: bytes);
-        
-        // 3. استخراج النص من جميع الصفحات
-        String text = PdfTextExtractor(document).extractText();
+        String fullText = PdfTextExtractor(document).extractText();
+        int pageCount = document.pages.count;
         document.dispose();
 
-        setState(() {
-          _extractedText = text;
-        });
+        // التقطيع
+        List<String> words = fullText.split(RegExp(r'\s+'));
+        List<String> chunks = [];
+        int chunkSize = 500; 
+        
+        for (int i = 0; i < words.length; i += chunkSize) {
+          int end = (i + chunkSize < words.length) ? i + chunkSize : words.length;
+          chunks.add(words.sublist(i, end).join(' '));
+        }
 
-        // عرض رسالة نجاح
+        // الحفظ في القاعدة
+        String fileHash = fileName + pageCount.toString();
+        int fileId = await DatabaseHelper.instance.addFile(fileName, fileHash, pageCount);
+
+        for (int i = 0; i < chunks.length; i++) {
+          await DatabaseHelper.instance.addChunk(fileId, i, chunks[i]);
+        }
+
+        await _loadSavedFiles();
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ تم قراءة الملف بنجاح! (${text.length} حرف)'),
-              backgroundColor: Colors.green,
-            ),
+            SnackBar(content: Text('✅ تم حفظ "$fileName" في الذاكرة!'), backgroundColor: Colors.green),
           );
         }
-      } else {
-        // المستخدم أغلق النافذة دون اختيار
-        setState(() => _isLoading = false);
       }
     } catch (e) {
-      setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ حدث خطأ في قراءة الملف: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('❌ خطأ: $e'), backgroundColor: Colors.red),
         );
       }
     }
     
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
@@ -288,16 +310,16 @@ class _FilesScreenState extends State<FilesScreen> {
             ),
             child: Column(
               children: [
-                const Icon(Icons.cloud_upload_outlined, size: 48, color: AppTheme.primaryLight),
+                const Icon(Icons.folder_special, size: 48, color: AppTheme.primaryLight),
                 const SizedBox(height: 12),
-                const Text('ارفع ملف PDF لقراءته', style: TextStyle(fontSize: 16, color: AppTheme.textPrimary)),
+                const Text('ارفع ملف PDF لحفظه في الذاكرة', style: TextStyle(fontSize: 16, color: AppTheme.textPrimary)),
                 const SizedBox(height: 16),
                 _isLoading
                     ? const CircularProgressIndicator(color: AppTheme.primaryLight)
                     : ElevatedButton.icon(
-                        onPressed: _pickAndReadFile,
+                        onPressed: _pickAndSaveFile,
                         icon: const Icon(Icons.add),
-                        label: const Text('اختيار ملف PDF'),
+                        label: const Text('اختيار ملف وحفظه'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
@@ -307,34 +329,55 @@ class _FilesScreenState extends State<FilesScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           
-          // عرض النص المستخرج تجريبياً
-          if (_extractedText.isNotEmpty)
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.primaryLight),
-                ),
-                child: SingleChildScrollView(
-                  child: Text(
-                    'معاينة أول 1000 حرف من الملف:\n\n$_extractedText'.substring(0, _extractedText.length > 1000 ? 1000 : _extractedText.length),
-                    style: const TextStyle(color: AppTheme.textMuted, height: 1.6),
+          const Align(
+            alignment: Alignment.centerRight,
+            child: Text('الملفات المحفوظة (الذاكرة):', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _savedFiles.isEmpty
+                ? const Center(child: Text('لا توجد ملفات محفوظة بعد.', style: TextStyle(color: AppTheme.textMuted)))
+                : ListView.builder(
+                    itemCount: _savedFiles.length,
+                    itemBuilder: (context, index) {
+                      final file = _savedFiles[index];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 36),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(file['name'], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                                  const SizedBox(height: 4),
+                                  Text('${file['total_pages']} صفحة | محفوظ في الذاكرة', style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                ),
-              ),
-            ),
+          ),
         ],
       ),
     );
   }
 }
 
-// --- 3. شاشة السجل ---
+// --- 5. شاشة السجل ---
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
 
@@ -344,7 +387,7 @@ class HistoryScreen extends StatelessWidget {
   }
 }
 
-// --- 4. شاشة الإعدادات ---
+// --- 6. شاشة الإعدادات ---
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 

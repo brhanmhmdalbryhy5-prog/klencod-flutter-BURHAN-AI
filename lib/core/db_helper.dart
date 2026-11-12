@@ -71,4 +71,17 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.query('chunks');
   }
+
+  Future<Map<String, dynamic>?> getRandomChunk(int fileId) async {
+    final db = await instance.database;
+    final results = await db.query(
+      'chunks', 
+      where: 'file_id = ?', 
+      whereArgs: [fileId], 
+      orderBy: 'RANDOM()', 
+      limit: 1
+    );
+    if (results.isNotEmpty) return results.first;
+    return null;
+  }
 }

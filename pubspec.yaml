@@ -9,16 +9,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
-  # مكتبات أساسية ومستقرة (تم تحديث إصداراتها لتناسب Flutter الحديث)
   shared_preferences: ^2.3.2
   sqflite: ^2.3.3+1
   path: ^1.9.0
   cupertino_icons: ^1.0.8
-
-  # ⚠️ تأجيل إضافة مكتبات الملفات والـ PDF حتى نصل لخطوة كتابة الكود الخاص بها
-  # file_picker: ^8.0.0
-  # syncfusion_flutter_pdf: ^27.1.48
+  
+  # مكتبات الملفات والـ PDF (أحدث إصدارات)
+  file_picker: ^8.1.4
+  syncfusion_flutter_pdf: ^27.1.48
 
 flutter:
   uses-material-design: true

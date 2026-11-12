@@ -95,7 +95,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// --- شاشة الدردشة (محدثة للبحث في الملفات) ---
+// --- شاشة الدردشة ---
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -121,7 +121,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _isThinking = true;
     });
 
-    // محاكاة تفكير بسيط ثم جلب الإجابة من الملفات
     await Future.delayed(const Duration(milliseconds: 500));
     String answer = await SearchEngine.getAnswer(userQuestion);
 
@@ -257,7 +256,7 @@ class _FilesScreenState extends State<FilesScreen> {
 
         List<String> words = fullText.split(RegExp(r'\s+'));
         List<String> chunks = [];
-        int chunkSize = 150; // تم تصغير حجم المقطع لدقة البحث
+        int chunkSize = 150; 
         
         for (int i = 0; i < words.length; i += chunkSize) {
           int end = (i + chunkSize < words.length) ? i + chunkSize : words.length;
@@ -287,6 +286,78 @@ class _FilesScreenState extends State<FilesScreen> {
       }
     }
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  // دالة توليد سؤال من الملف
+  Future<void> _generateQuiz(int fileId) async {
+    final chunk = await DatabaseHelper.instance.getRandomChunk(fileId);
+    
+    if (chunk == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا توجد نصوص كافية في هذا الملف لصناعة سؤال.')),
+      );
+      return;
+    }
+
+    String originalText = chunk['text'];
+    List<String> words = originalText.split(' ');
+    
+    if (words.length < 6) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('المقطع قصير جداً لصناعة سؤال. جرب ملفاً آخر.')),
+      );
+      return;
+    }
+
+    String questionPart = words.take(4).join(' ');
+    String answerPart = words.skip(4).take(15).join(' ') + '...';
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) {
+        bool showAnswer = false;
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surface,
+              title: const Text('🎓 اختبار من الملف', style: TextStyle(color: AppTheme.primaryLight)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('أكمل الجملة التالية من الملف:', style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
+                  const SizedBox(height: 12),
+                  Text('"$questionPart ........."', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 20),
+                  if (showAnswer) ...[
+                    const Text('الإجابة من الملف:', style: TextStyle(color: Colors.greenAccent, fontSize: 14)),
+                    const SizedBox(height: 8),
+                    Text('"$answerPart"', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
+                  ]
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('إغلاق', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+                  onPressed: () {
+                    setStateDialog(() => answerPart = answerPart); // trigger rebuild
+                    setStateDialog(() => showAnswer = true);
+                  },
+                  child: const Text('أظهر الإجابة'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -357,6 +428,11 @@ class _FilesScreenState extends State<FilesScreen> {
                                   Text('${file['total_pages']} صفحة | جاهز للإجابة', style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
                                 ],
                               ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.quiz, color: AppTheme.primaryLight),
+                              tooltip: 'اختبرني من هذا الملف',
+                              onPressed: () => _generateQuiz(file['id']),
                             ),
                           ],
                         ),

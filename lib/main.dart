@@ -2,18 +2,16 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'core/db_helper.dart'; // استدعاء ملف قاعدة البيانات
+import 'core/db_helper.dart';
+import 'core/search_engine.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // تهيئة قاعدة البيانات عند بدء التطبيق
   await DatabaseHelper.instance.database; 
-  
   runApp(const BurhanAIApp());
 }
 
-// --- 1. الألوان والثيم ---
+// --- الألوان والثيم ---
 class AppTheme {
   static const Color background = Color(0xFF0F172A);
   static const Color surface = Color(0xFF1E293B);
@@ -44,7 +42,6 @@ class AppTheme {
       );
 }
 
-// --- 2. التطبيق الرئيسي ---
 class BurhanAIApp extends StatelessWidget {
   const BurhanAIApp({super.key});
 
@@ -68,7 +65,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-
   final List<Widget> _screens = [
     const ChatScreen(),
     const FilesScreen(),
@@ -82,19 +78,6 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         title: const Text('برهان AI | Burhan AI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () {
-              showAboutDialog(
-                context: context,
-                applicationName: 'برهان AI',
-                applicationVersion: '1.0.0',
-                applicationLegalese: 'مساعد ذكاء اصطناعي محلي يعمل بدون إنترنت.',
-              );
-            },
-          )
-        ],
       ),
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -112,7 +95,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// --- 3. شاشة الدردشة ---
+// --- شاشة الدردشة (محدثة للبحث في الملفات) ---
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -123,22 +106,31 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, String>> _messages = [
-    {'role': 'assistant', 'text': 'مرحباً! أنا برهان AI. ارفع ملفاً من تبويب "الملفات" ثم اسألني عنه.'}
+    {'role': 'assistant', 'text': 'مرحباً! أنا برهان AI. لقد جهزت ذاكرتي. ارفع ملفاً من تبويب "الملفات" ثم اسألني عنه.'}
   ];
+  bool _isThinking = false;
 
-  void _sendMessage() {
-    if (_controller.text.trim().isEmpty) return;
+  void _sendMessage() async {
+    if (_controller.text.trim().isEmpty || _isThinking) return;
+    
+    String userQuestion = _controller.text;
+    
     setState(() {
-      _messages.add({'role': 'user', 'text': _controller.text});
+      _messages.add({'role': 'user', 'text': userQuestion});
       _controller.clear();
-      Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) {
-          setState(() {
-            _messages.add({'role': 'assistant', 'text': 'هذا رد تجريبي. لقد استلمت رسالتك وسأجيبك من الملفات قريباً.'});
-          });
-        }
-      });
+      _isThinking = true;
     });
+
+    // محاكاة تفكير بسيط ثم جلب الإجابة من الملفات
+    await Future.delayed(const Duration(milliseconds: 500));
+    String answer = await SearchEngine.getAnswer(userQuestion);
+
+    if (mounted) {
+      setState(() {
+        _messages.add({'role': 'assistant', 'text': answer});
+        _isThinking = false;
+      });
+    }
   }
 
   @override
@@ -148,8 +140,18 @@ class _ChatScreenState extends State<ChatScreen> {
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: _messages.length,
+            itemCount: _messages.length + (_isThinking ? 1 : 0),
             itemBuilder: (context, index) {
+              if (index == _messages.length && _isThinking) {
+                return const Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text('برهان يبحث في ملفاتك...', style: TextStyle(color: AppTheme.textMuted)),
+                  ),
+                );
+              }
+              
               final msg = _messages[index];
               final isUser = msg['role'] == 'user';
               return Align(
@@ -200,8 +202,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 backgroundColor: AppTheme.primary,
                 radius: 24,
                 child: IconButton(
-                  icon: const Icon(Icons.send, color: Colors.white, size: 20),
-                  onPressed: _sendMessage,
+                  icon: _isThinking ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2) : const Icon(Icons.send, color: Colors.white, size: 20),
+                  onPressed: _isThinking ? null : _sendMessage,
                 ),
               ),
             ],
@@ -212,7 +214,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// --- 4. شاشة الملفات (قاعدة البيانات) ---
+// --- شاشة الملفات ---
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
 
@@ -232,16 +234,11 @@ class _FilesScreenState extends State<FilesScreen> {
 
   Future<void> _loadSavedFiles() async {
     final files = await DatabaseHelper.instance.getAllFiles();
-    if (mounted) {
-      setState(() {
-        _savedFiles = files;
-      });
-    }
+    if (mounted) setState(() => _savedFiles = files);
   }
 
   Future<void> _pickAndSaveFile() async {
     setState(() => _isLoading = true);
-
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -258,17 +255,15 @@ class _FilesScreenState extends State<FilesScreen> {
         int pageCount = document.pages.count;
         document.dispose();
 
-        // التقطيع
         List<String> words = fullText.split(RegExp(r'\s+'));
         List<String> chunks = [];
-        int chunkSize = 500; 
+        int chunkSize = 150; // تم تصغير حجم المقطع لدقة البحث
         
         for (int i = 0; i < words.length; i += chunkSize) {
           int end = (i + chunkSize < words.length) ? i + chunkSize : words.length;
           chunks.add(words.sublist(i, end).join(' '));
         }
 
-        // الحفظ في القاعدة
         String fileHash = fileName + pageCount.toString();
         int fileId = await DatabaseHelper.instance.addFile(fileName, fileHash, pageCount);
 
@@ -291,7 +286,6 @@ class _FilesScreenState extends State<FilesScreen> {
         );
       }
     }
-    
     if (mounted) setState(() => _isLoading = false);
   }
 
@@ -330,10 +324,9 @@ class _FilesScreenState extends State<FilesScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          
           const Align(
             alignment: Alignment.centerRight,
-            child: Text('الملفات المحفوظة (الذاكرة):', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+            child: Text('الملفات المحفوظة:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
           ),
           const SizedBox(height: 12),
           Expanded(
@@ -361,7 +354,7 @@ class _FilesScreenState extends State<FilesScreen> {
                                 children: [
                                   Text(file['name'], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                                   const SizedBox(height: 4),
-                                  Text('${file['total_pages']} صفحة | محفوظ في الذاكرة', style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                                  Text('${file['total_pages']} صفحة | جاهز للإجابة', style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -377,17 +370,17 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 }
 
-// --- 5. شاشة السجل ---
+// --- شاشة السجل ---
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: Text('سجل المحادثات سيظهر هنا', style: TextStyle(color: AppTheme.textMuted, fontSize: 18)));
+    return const Center(child: Text('سجل المحادثات سيظهر هنا قريباً', style: TextStyle(color: AppTheme.textMuted, fontSize: 18)));
   }
 }
 
-// --- 6. شاشة الإعدادات ---
+// --- شاشة الإعدادات ---
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -403,37 +396,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildSectionTitle('إعدادات البحث'),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+          child: Text('إعدادات البحث', style: TextStyle(color: AppTheme.primaryLight, fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
         SwitchListTile(
           title: const Text('الوضع المتصل (البحث في الإنترنت)', style: TextStyle(color: AppTheme.textPrimary)),
-          subtitle: const Text('يستخدم ويكيبيديا لتوضيح ما ليس في ملفاتك.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+          subtitle: const Text('غير مفعل حالياً في هذه النسخة.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
           value: _onlineMode,
           activeColor: AppTheme.primaryLight,
           onChanged: (val) => setState(() => _onlineMode = val),
         ),
         const Divider(color: Colors.white12),
-        _buildSectionTitle('إعدادات الملفات'),
-        ListTile(
-          title: const Text('الحد الأقصى للصفحات', style: TextStyle(color: AppTheme.textPrimary)),
-          subtitle: const Text('300 صفحة لكل ملف', style: TextStyle(color: AppTheme.textMuted)),
-          trailing: const Icon(Icons.chevron_right, color: AppTheme.textMuted),
-          onTap: () {},
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+          child: Text('حول التطبيق', style: TextStyle(color: AppTheme.primaryLight, fontWeight: FontWeight.bold, fontSize: 16)),
         ),
-        const Divider(color: Colors.white12),
-        _buildSectionTitle('حول التطبيق'),
         const ListTile(
           title: Text('برهان AI', style: TextStyle(color: AppTheme.textPrimary)),
           subtitle: Text('الإصدار 1.0.0 - محلي 100%', style: TextStyle(color: AppTheme.textMuted)),
           leading: Icon(Icons.smart_toy, color: AppTheme.primaryLight),
         ),
       ],
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
-      child: Text(title, style: const TextStyle(color: AppTheme.primaryLight, fontWeight: FontWeight.bold, fontSize: 16)),
     );
   }
 }

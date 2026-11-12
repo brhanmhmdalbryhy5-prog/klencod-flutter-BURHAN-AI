@@ -1,12 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const BurhanAIApp());
 }
 
-// --- الألوان المتدرجة (تم نقلها من الكود الخاص بك) ---
+// --- الألوان المتدرجة ---
 class AppTheme {
   static const Color background = Color(0xFF0F172A);
   static const Color surface = Color(0xFF1E293B);
@@ -51,7 +53,7 @@ class BurhanAIApp extends StatelessWidget {
   }
 }
 
-// --- الشاشة الرئيسية التي تدير التنقل ---
+// --- الشاشة الرئيسية ---
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -62,7 +64,6 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  // قائمة الشاشات
   final List<Widget> _screens = [
     const ChatScreen(),
     const FilesScreen(),
@@ -74,10 +75,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'برهان AI | Burhan AI',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-        ),
+        title: const Text('برهان AI | Burhan AI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
         centerTitle: true,
         actions: [
           IconButton(
@@ -97,11 +95,7 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         type: BottomNavigationBarType.fixed,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'الدردشة'),
           BottomNavigationBarItem(icon: Icon(Icons.folder_outlined), label: 'الملفات'),
@@ -132,7 +126,6 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _messages.add({'role': 'user', 'text': _controller.text});
       _controller.clear();
-      // رد وهمي للتجربة
       Future.delayed(const Duration(seconds: 1), () {
         setState(() {
           _messages.add({'role': 'assistant', 'text': 'هذا رد تجريبي. لقد استلمت رسالتك وسأجيبك من الملفات قريباً.'});
@@ -159,9 +152,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.all(14),
                   constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
                   decoration: BoxDecoration(
-                    gradient: isUser
-                        ? const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF3B82F6)])
-                        : null,
+                    gradient: isUser ? const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF3B82F6)]) : null,
                     color: isUser ? null : AppTheme.surface,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
@@ -171,10 +162,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     border: isUser ? null : Border.all(color: Colors.white12),
                   ),
-                  child: Text(
-                    msg['text']!,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15, height: 1.5),
-                  ),
+                  child: Text(msg['text']!, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15, height: 1.5)),
                 ),
               );
             },
@@ -182,10 +170,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: const BoxDecoration(
-            color: AppTheme.surface,
-            border: Border(top: BorderSide(color: Colors.white12)),
-          ),
+          decoration: const BoxDecoration(color: AppTheme.surface, border: Border(top: BorderSide(color: Colors.white12))),
           child: Row(
             children: [
               Expanded(
@@ -197,10 +182,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     hintStyle: const TextStyle(color: AppTheme.textMuted),
                     filled: true,
                     fillColor: AppTheme.background,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   ),
                   onSubmitted: (_) => _sendMessage(),
@@ -223,9 +205,73 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// --- 2. شاشة الملفات ---
-class FilesScreen extends StatelessWidget {
+// --- 2. شاشة الملفات (تم تفعيل زر الرفع) ---
+class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
+
+  @override
+  State<FilesScreen> createState() => _FilesScreenState();
+}
+
+class _FilesScreenState extends State<FilesScreen> {
+  bool _isLoading = false;
+  String _extractedText = '';
+
+  // دالة اختيار الملف وقراءته
+  Future<void> _pickAndReadFile() async {
+    setState(() {
+      _isLoading = true;
+      _extractedText = '';
+    });
+
+    try {
+      // 1. فتح مدير الملفات لاختيار PDF فقط
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        File file = File(result.files.single.path!);
+        
+        // 2. قراءة ملف الـ PDF
+        final bytes = await file.readAsBytes();
+        final PdfDocument document = PdfDocument(inputBytes: bytes);
+        
+        // 3. استخراج النص من جميع الصفحات
+        String text = PdfTextExtractor(document).extractText();
+        document.dispose();
+
+        setState(() {
+          _extractedText = text;
+        });
+
+        // عرض رسالة نجاح
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ تم قراءة الملف بنجاح! (${text.length} حرف)'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // المستخدم أغلق النافذة دون اختيار
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ حدث خطأ في قراءة الملف: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+    
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -244,71 +290,44 @@ class FilesScreen extends StatelessWidget {
               children: [
                 const Icon(Icons.cloud_upload_outlined, size: 48, color: AppTheme.primaryLight),
                 const SizedBox(height: 12),
-                const Text('ارفع ملف PDF أو DOCX أو TXT', style: TextStyle(fontSize: 16, color: AppTheme.textPrimary)),
-                const SizedBox(height: 4),
-                Text('الحد الأقصى 300 صفحة للملف', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                const Text('ارفع ملف PDF لقراءته', style: TextStyle(fontSize: 16, color: AppTheme.textPrimary)),
                 const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    // هنا سنضع كود اختيار الملف لاحقاً
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('سيتم تفعيل اختيار الملفات في الخطوة القادمة!')),
-                    );
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('اختيار ملف'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                _isLoading
+                    ? const CircularProgressIndicator(color: AppTheme.primaryLight)
+                    : ElevatedButton.icon(
+                        onPressed: _pickAndReadFile,
+                        icon: const Icon(Icons.add),
+                        label: const Text('اختيار ملف PDF'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                      ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // عرض النص المستخرج تجريبياً
+          if (_extractedText.isNotEmpty)
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.primaryLight),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    'معاينة أول 1000 حرف من الملف:\n\n$_extractedText'.substring(0, _extractedText.length > 1000 ? 1000 : _extractedText.length),
+                    style: const TextStyle(color: AppTheme.textMuted, height: 1.6),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-          const Align(
-            alignment: Alignment.centerRight,
-            child: Text('ملفاتك:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ListView(
-              children: [
-                _buildFileCard('كتاب_الفيزياء.pdf', '280 صفحة | جاهز', isReady: true),
-                _buildFileCard('ملاحظات_الاجتماع.pdf', '45 صفحة | 60% قيد الفهرسة', isReady: false),
-              ],
-            ),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFileCard(String name, String details, {required bool isReady}) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.picture_as_pdf, color: isReady ? Colors.redAccent : Colors.orange, size: 36),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                const SizedBox(height: 4),
-                Text(details, style: TextStyle(color: isReady ? Colors.greenAccent : Colors.orange, fontSize: 12)),
-              ],
-            ),
-          ),
-          IconButton(icon: const Icon(Icons.delete_outline, color: AppTheme.textMuted), onPressed: () {}),
         ],
       ),
     );
@@ -321,9 +340,7 @@ class HistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text('سجل المحادثات سيظهر هنا', style: TextStyle(color: AppTheme.textMuted, fontSize: 18)),
-    );
+    return const Center(child: Text('سجل المحادثات سيظهر هنا', style: TextStyle(color: AppTheme.textMuted, fontSize: 18)));
   }
 }
 
@@ -349,9 +366,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: const Text('يستخدم ويكيبيديا لتوضيح ما ليس في ملفاتك.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
           value: _onlineMode,
           activeColor: AppTheme.primaryLight,
-          onChanged: (val) {
-            setState(() { _onlineMode = val; });
-          },
+          onChanged: (val) => setState(() => _onlineMode = val),
         ),
         const Divider(color: Colors.white12),
         _buildSectionTitle('إعدادات الملفات'),

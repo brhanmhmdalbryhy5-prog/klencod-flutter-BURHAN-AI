@@ -130,4 +130,15 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.query('sessions', orderBy: 'created_at DESC');
   }
+
+  // --- الدالة التي كانت ناقصة وسببت الخطأ ---
+  Future<List<Map<String, dynamic>>> getMessagesForSession(int sessionId) async {
+    final db = await instance.database;
+    return await db.query(
+      'messages',
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+      orderBy: 'id ASC',
+    );
+  }
 }

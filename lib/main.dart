@@ -49,15 +49,26 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  final List<Widget> _screens = [
-    const ChatScreen(), const FilesScreen(), const HistoryScreen(), const SettingsScreen(),
-  ];
+  
+  // استخدمنا مفتاح (Key) لإجبار الشاشات على التحديث عند التنقل
+  final GlobalKey<ChatScreenState> _chatKey = GlobalKey<ChatScreenState>();
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> screens = [
+      ChatScreen(key: _chatKey),
+      const FilesScreen(),
+      HistoryScreen(onSessionSelected: (sessionId, title) async {
+        // عند اختيار محادثة من السجل، ننتقل للدردشة ونحمل الرسائل
+        await _chatKey.currentState?.loadSession(sessionId, title);
+        setState(() => _currentIndex = 0);
+      }),
+      const SettingsScreen(),
+    ];
+
     return Scaffold(
       appBar: AppBar(title: const Text('برهان AI | Burhan AI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)), centerTitle: true),
-      body: _screens[_currentIndex],
+      body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex, type: BottomNavigationBarType.fixed,
         onTap: (index) => setState(() => _currentIndex = index),
@@ -72,29 +83,42 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
+// --- شاشة الدردشة ---
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  State<ChatScreen> createState() => ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<Map<String, dynamic>> _messages = [];
+  List<Map<String, dynamic>> _messages = [];
   bool _isThinking = false;
   int _currentSessionId = -1;
 
   @override
   void initState() {
     super.initState();
-    _initSession();
+    _startNewChat();
   }
 
-  Future<void> _initSession() async {
-    int sessionId = await DatabaseHelper.instance.createSession('محادثة ${DateTime.now().day}/${DateTime.now().month}');
+  // دالة بدء محادثة جديدة
+  Future<void> _startNewChat() async {
+    int sessionId = await DatabaseHelper.instance.createSession('محادثة ${DateTime.now().day}/${DateTime.now().month} - ${DateTime.now().hour}:${DateTime.now().minute}');
     setState(() {
       _currentSessionId = sessionId;
-      _messages.add({'role': 'assistant', 'text': 'مرحباً! أنا برهان AI، مدعوم بالذكاء الاصطناعي (Gemini).\n\nارفع ملفك من تبويب "الملفات" ثم اسألني عنه، وسأجيبك بدقة ومرونة عالية.', 'id': 0});
+      _messages = [
+        {'role': 'assistant', 'text': 'مرحباً بك! أنا برهان. كيف يمكنني مساعدتك اليوم؟'}
+      ];
+    });
+  }
+
+  // دالة استعادة محادثة قديمة من السجل
+  Future<void> loadSession(int sessionId, String title) async {
+    final history = await DatabaseHelper.instance.getMessagesForSession(sessionId);
+    setState(() {
+      _currentSessionId = sessionId;
+      _messages = history.map((m) => {'role': m['role'], 'text': m['content']}).toList();
     });
   }
 
@@ -104,14 +128,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (!isCorrection) {
       setState(() {
-        _messages.add({'role': 'user', 'text': userQuestion, 'id': _messages.length});
+        _messages.add({'role': 'user', 'text': userQuestion});
         _controller.clear();
         _isThinking = true;
       });
       await DatabaseHelper.instance.addMessage(_currentSessionId, 'user', userQuestion);
     } else {
       setState(() {
-        _messages.add({'role': 'user', 'text': 'الإجابة الصحيحة هي: $userQuestion', 'id': _messages.length});
+        _messages.add({'role': 'user', 'text': 'الإجابة الصحيحة هي: $userQuestion'});
         _isThinking = true;
       });
       await DatabaseHelper.instance.addLearnedQA(
@@ -129,7 +153,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (mounted) {
       setState(() {
-        _messages.add({'role': 'assistant', 'text': answer, 'id': _messages.length});
+        _messages.add({'role': 'assistant', 'text': answer});
         _isThinking = false;
       });
       await DatabaseHelper.instance.addMessage(_currentSessionId, 'assistant', answer);
@@ -222,6 +246,12 @@ class _ChatScreenState extends State<ChatScreen> {
           decoration: const BoxDecoration(color: AppTheme.surface, border: Border(top: BorderSide(color: Colors.white12))),
           child: Row(
             children: [
+              // زر محادثة جديدة
+              IconButton(
+                icon: const Icon(Icons.add_comment, color: AppTheme.primaryLight),
+                tooltip: 'محادثة جديدة',
+                onPressed: _startNewChat,
+              ),
               Expanded(
                 child: TextField(
                   controller: _controller,
@@ -251,6 +281,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+// --- شاشة الملفات ---
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
   @override
@@ -425,8 +456,11 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 }
 
+// --- شاشة السجل (تفعيل الضغط للفتح) ---
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  final Function(int, String) onSessionSelected;
+  const HistoryScreen({super.key, required this.onSessionSelected});
+  
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
@@ -457,12 +491,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 leading: const Icon(Icons.chat, color: AppTheme.primaryLight),
                 title: Text(session['title'] ?? 'محادثة', style: const TextStyle(color: AppTheme.textPrimary)),
                 subtitle: Text(session['created_at'].toString().substring(0, 16), style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.textMuted),
+                onTap: () {
+                  // فتح المحادثة
+                  widget.onSessionSelected(session['id'], session['title']);
+                },
               );
             },
           );
   }
 }
 
+// --- شاشة الإعدادات ---
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -477,7 +517,7 @@ class SettingsScreen extends StatelessWidget {
         ),
         const ListTile(
           title: Text('محرك الذكاء الاصطناعي', style: TextStyle(color: AppTheme.textPrimary)),
-          subtitle: Text('Google Gemini 1.5 Flash', style: TextStyle(color: AppTheme.textMuted)),
+          subtitle: Text('Google Gemini Pro', style: TextStyle(color: AppTheme.textMuted)),
           leading: Icon(Icons.auto_awesome, color: Colors.greenAccent),
         ),
         const Divider(color: Colors.white12),
@@ -487,7 +527,7 @@ class SettingsScreen extends StatelessWidget {
         ),
         const ListTile(
           title: Text('برهان AI', style: TextStyle(color: AppTheme.textPrimary)),
-          subtitle: Text('الإصدار 2.0.0 - مدعوم بالكامل بـ Gemini', style: TextStyle(color: AppTheme.textMuted)),
+          subtitle: Text('الإصدار 2.1.0', style: TextStyle(color: AppTheme.textMuted)),
           leading: Icon(Icons.smart_toy, color: AppTheme.primaryLight),
         ),
       ],

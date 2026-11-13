@@ -3,12 +3,11 @@ import 'package:http/http.dart' as http;
 import 'db_helper.dart';
 
 class SearchEngine {
-  // تم تشفير المفتاح الجديد الخاص بك بصيغة Base64
+  // المفتاح الخاص بك مشفر
   static const String _encodedKey = "QVEuQWI4Uk42S21ja2ZZM3hpaDFlS1hnUkdVZzl0Y2VUckR0UU13MXhGUHh5dWEtTTJxQmc=";
   
   static Future<String> _askGemini(String question, String fileContext) async {
     try {
-      // فك تشفير المفتاح
       final String apiKey = utf8.decode(base64.decode(_encodedKey));
 
       String prompt = fileContext.isEmpty 
@@ -26,29 +25,30 @@ $fileContext
 $question
 """;
 
-      // إرسال المفتاح كـ Parameter في الرابط (هذه الطريقة مضمونة 100% مع مفاتيح AQ)
-      final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$apiKey');
+      // تم تغيير النموذج إلى 1.5-flash لضمان الاستقرار وتجنب الازدحام
+      final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey');
       
       final response = await http.post(
         url,
         headers: {
           'Content-Type': 'application/json',
+          'Connection': 'close', 
         },
         body: jsonEncode({
           "contents": [
             {"parts": [{"text": prompt}]}
           ]
         }),
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['candidates'][0]['content']['parts'][0]['text'];
       } else {
-        return "حدث خطأ (كود ${response.statusCode}):\n${response.body}";
+        return "حدث خطأ من الخادم (كود ${response.statusCode}):\n${response.body}";
       }
     } catch (e) {
-      return "تعذر الاتصال بالإنترنت. تأكد من اتصالك وحاول مرة أخرى.\nتفاصيل: $e";
+      return "تعذر الاتصال بالإنترنت (انتهت المهلة).\nتأكد من قوة إشارة الشبكة لديك.\n\nتفاصيل: $e";
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/db_helper.dart';
 import 'core/search_engine.dart';
 
@@ -49,8 +50,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  
-  // استخدمنا مفتاح (Key) لإجبار الشاشات على التحديث عند التنقل
   final GlobalKey<ChatScreenState> _chatKey = GlobalKey<ChatScreenState>();
 
   @override
@@ -59,7 +58,6 @@ class _MainScreenState extends State<MainScreen> {
       ChatScreen(key: _chatKey),
       const FilesScreen(),
       HistoryScreen(onSessionSelected: (sessionId, title) async {
-        // عند اختيار محادثة من السجل، ننتقل للدردشة ونحمل الرسائل
         await _chatKey.currentState?.loadSession(sessionId, title);
         setState(() => _currentIndex = 0);
       }),
@@ -67,7 +65,21 @@ class _MainScreenState extends State<MainScreen> {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('برهان AI | Burhan AI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('برهان AI | Burhan AI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)), 
+        centerTitle: true,
+        actions: [
+          // زر بدء محادثة جديدة
+          IconButton(
+            icon: const Icon(Icons.add_comment_outlined),
+            tooltip: 'محادثة جديدة',
+            onPressed: () {
+              _chatKey.currentState?.startNewChat();
+              setState(() => _currentIndex = 0);
+            },
+          )
+        ],
+      ),
       body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex, type: BottomNavigationBarType.fixed,
@@ -99,12 +111,34 @@ class ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _startNewChat();
+    _loadLastOrNewSession();
   }
 
-  // دالة بدء محادثة جديدة
-  Future<void> _startNewChat() async {
+  // تحميل آخر محادثة أو بدء محادثة جديدة
+  Future<void> _loadLastOrNewSession() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    int lastSessionId = prefs.getInt('last_session_id') ?? -1;
+
+    if (lastSessionId != -1) {
+      final history = await DatabaseHelper.instance.getMessagesForSession(lastSessionId);
+      if (history.isNotEmpty) {
+        setState(() {
+          _currentSessionId = lastSessionId;
+          _messages = history.map((m) => {'role': m['role'], 'text': m['content']}).toList();
+        });
+        return;
+      }
+    }
+    // إذا لم توجد محادثة سابقة، ابدأ واحدة جديدة
+    startNewChat();
+  }
+
+  // بدء محادثة جديدة تماماً
+  Future<void> startNewChat() async {
     int sessionId = await DatabaseHelper.instance.createSession('محادثة ${DateTime.now().day}/${DateTime.now().month} - ${DateTime.now().hour}:${DateTime.now().minute}');
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_session_id', sessionId); // حفظ رقم الجلسة الحالية
+
     setState(() {
       _currentSessionId = sessionId;
       _messages = [
@@ -113,9 +147,12 @@ class ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // دالة استعادة محادثة قديمة من السجل
+  // استعادة محادثة قديمة من السجل
   Future<void> loadSession(int sessionId, String title) async {
     final history = await DatabaseHelper.instance.getMessagesForSession(sessionId);
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_session_id', sessionId);
+
     setState(() {
       _currentSessionId = sessionId;
       _messages = history.map((m) => {'role': m['role'], 'text': m['content']}).toList();
@@ -246,12 +283,6 @@ class ChatScreenState extends State<ChatScreen> {
           decoration: const BoxDecoration(color: AppTheme.surface, border: Border(top: BorderSide(color: Colors.white12))),
           child: Row(
             children: [
-              // زر محادثة جديدة
-              IconButton(
-                icon: const Icon(Icons.add_comment, color: AppTheme.primaryLight),
-                tooltip: 'محادثة جديدة',
-                onPressed: _startNewChat,
-              ),
               Expanded(
                 child: TextField(
                   controller: _controller,
@@ -281,7 +312,7 @@ class ChatScreenState extends State<ChatScreen> {
   }
 }
 
-// --- شاشة الملفات ---
+// --- بقية الشاشات (الملفات، السجل، الإعدادات) تبقى كما هي ---
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key});
   @override
@@ -456,7 +487,6 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 }
 
-// --- شاشة السجل (تفعيل الضغط للفتح) ---
 class HistoryScreen extends StatefulWidget {
   final Function(int, String) onSessionSelected;
   const HistoryScreen({super.key, required this.onSessionSelected});
@@ -493,7 +523,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 subtitle: Text(session['created_at'].toString().substring(0, 16), style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                 trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.textMuted),
                 onTap: () {
-                  // فتح المحادثة
                   widget.onSessionSelected(session['id'], session['title']);
                 },
               );
@@ -502,7 +531,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
-// --- شاشة الإعدادات ---
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 

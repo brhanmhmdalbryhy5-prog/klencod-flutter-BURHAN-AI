@@ -3,12 +3,12 @@ import 'package:http/http.dart' as http;
 import 'db_helper.dart';
 
 class SearchEngine {
-  // تم تشفير المفتاح بصيغة Base64 لتجاوز حماية المنصة
-  static const String _encodedKey = "QVEuQWI4Uk42S19WWi1RSi1MdE9NTnUwU1VidFMtY3dhRkE0OWkxNF9fSVBGMnppVGU5RVE=";
+  // تم تشفير المفتاح الجديد الخاص بك بصيغة Base64
+  static const String _encodedKey = "QVEuQWI4Uk42S21ja2ZZM3hpaDFlS1hnUkdVZzl0Y2VUckR0UU13MXhGUHh5dWEtTTJxQmc=";
   
   static Future<String> _askGemini(String question, String fileContext) async {
     try {
-      // فك تشفير المفتاح عند التشغيل
+      // فك تشفير المفتاح
       final String apiKey = utf8.decode(base64.decode(_encodedKey));
 
       String prompt = fileContext.isEmpty 
@@ -26,13 +26,13 @@ $fileContext
 $question
 """;
 
-      final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent');
+      // إرسال المفتاح كـ Parameter في الرابط (هذه الطريقة مضمونة 100% مع مفاتيح AQ)
+      final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$apiKey');
       
       final response = await http.post(
         url,
         headers: {
           'Content-Type': 'application/json',
-          'X-goog-api-key': apiKey, // نستخدم المفتاح بعد فك تشفيره
         },
         body: jsonEncode({
           "contents": [

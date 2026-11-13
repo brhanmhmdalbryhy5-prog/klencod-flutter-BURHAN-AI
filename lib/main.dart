@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'core/db_helper.dart';
 import 'core/search_engine.dart';
 
@@ -95,7 +94,7 @@ class _ChatScreenState extends State<ChatScreen> {
     int sessionId = await DatabaseHelper.instance.createSession('محادثة ${DateTime.now().day}/${DateTime.now().month}');
     setState(() {
       _currentSessionId = sessionId;
-      _messages.add({'role': 'assistant', 'text': 'مرحباً! أنا برهان AI. جاهز للإجابة من ملفاتك. (يمكنك تصحيح أي إجابة لتعليمي)', 'id': 0});
+      _messages.add({'role': 'assistant', 'text': 'مرحباً! أنا برهان AI، مدعوم بالذكاء الاصطناعي (Gemini).\n\nارفع ملفك من تبويب "الملفات" ثم اسألني عنه، وسأجيبك بدقة ومرونة عالية.', 'id': 0});
     });
   }
 
@@ -182,7 +181,7 @@ class _ChatScreenState extends State<ChatScreen> {
             itemCount: _messages.length + (_isThinking ? 1 : 0),
             itemBuilder: (context, index) {
               if (index == _messages.length && _isThinking) {
-                return const Align(alignment: Alignment.centerRight, child: Padding(padding: EdgeInsets.all(16), child: Text('برهان يبحث...', style: TextStyle(color: AppTheme.textMuted))));
+                return const Align(alignment: Alignment.centerRight, child: Padding(padding: EdgeInsets.all(16), child: Text('برهان يفكر...', style: TextStyle(color: AppTheme.textMuted))));
               }
               
               final msg = _messages[index];
@@ -464,33 +463,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  bool _onlineMode = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _onlineMode = prefs.getBool('online_mode') ?? false;
-    });
-  }
-
-  Future<void> _toggleOnlineMode(bool value) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('online_mode', value);
-    setState(() => _onlineMode = value);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -499,14 +473,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
-          child: Text('إعدادات البحث', style: TextStyle(color: AppTheme.primaryLight, fontWeight: FontWeight.bold, fontSize: 16)),
+          child: Text('معلومات النظام', style: TextStyle(color: AppTheme.primaryLight, fontWeight: FontWeight.bold, fontSize: 16)),
         ),
-        SwitchListTile(
-          title: const Text('الوضع المتصل (البحث في الإنترنت)', style: TextStyle(color: AppTheme.textPrimary)),
-          subtitle: const Text('يبحث في ويكيبيديا عند عدم وجود الإجابة في ملفاتك.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-          value: _onlineMode,
-          activeColor: AppTheme.primaryLight,
-          onChanged: _toggleOnlineMode,
+        const ListTile(
+          title: Text('محرك الذكاء الاصطناعي', style: TextStyle(color: AppTheme.textPrimary)),
+          subtitle: Text('Google Gemini 1.5 Flash', style: TextStyle(color: AppTheme.textMuted)),
+          leading: Icon(Icons.auto_awesome, color: Colors.greenAccent),
         ),
         const Divider(color: Colors.white12),
         const Padding(
@@ -515,7 +487,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const ListTile(
           title: Text('برهان AI', style: TextStyle(color: AppTheme.textPrimary)),
-          subtitle: Text('الإصدار 1.1.0 - يدعم الوضع المتصل', style: TextStyle(color: AppTheme.textMuted)),
+          subtitle: Text('الإصدار 2.0.0 - مدعوم بالكامل بـ Gemini', style: TextStyle(color: AppTheme.textMuted)),
           leading: Icon(Icons.smart_toy, color: AppTheme.primaryLight),
         ),
       ],

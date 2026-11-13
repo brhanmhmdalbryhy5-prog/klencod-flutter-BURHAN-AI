@@ -9,7 +9,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('burhan_ai_final.db'); // قاعدة بيانات جديدة
+    _database = await _initDB('burhan_ai_final.db');
     return _database!;
   }
 
